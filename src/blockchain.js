@@ -12,6 +12,7 @@ const SHA256 = require('crypto-js/sha256');
 const BlockClass = require('./block.js');
 const bitcoinMessage = require('bitcoinjs-message');
 const hex2ascii = require('hex2ascii');
+var assert = require('assert');
 
 class Blockchain {
 
@@ -62,22 +63,26 @@ class Blockchain {
      * Note: the symbol `_` in the method name indicates in the javascript convention 
      * that this method is a private method. 
      */
-    _addBlock(block) {
+    async _addBlock(block) {
         let self = this;
-        return new Promise(async (resolve, reject) => {
-            block.previousBlockHash = self.chain[self.height] ? self.chain[self.height].hash : null;
-            block.time = new Date().getTime().toString().slice(0,-3);
+        
+        block.previousBlockHash = self.chain[self.height] ? self.chain[self.height].hash : null;
+        
+        block.time = new Date().getTime().toString().slice(0,-3);
 
-            block.height = self.height + 1;
+        block.height = self.height + 1;
 
-            block.hash = await SHA256(JSON.stringify(block)).toString();
-            try {
-                self.height = self.chain.push(block) - 1;
-                resolve(block);
-            } catch {
-                reject("Can't create block.");
-            }
-        });
+        block.hash = SHA256(JSON.stringify(block)).toString();
+        
+        try {
+            block.hash = SHA256(JSON.stringify(block)).toString();
+
+            self.height = self.chain.push(block) - 1;
+            
+            return block;
+        } catch {
+            return "Can't create block.";
+        }
     }
 
     /**
@@ -111,30 +116,45 @@ class Blockchain {
      * @param {*} signature 
      * @param {*} star 
      */
-    submitStar(address, message, signature, star) {
+    async submitStar(address, message, signature, star) {
         let self = this;
-        return new Promise(async (resolve, reject) => {
-            let time = parseInt(message.split(":")[1]);
-            let fiveMin = 5 * 60 * 1000;
+        
+        let time = parseInt(message.split(":")[1]);
+        let fiveMin = 5 * 60 * 10000;
+        let maxAcceptableTime = time + fiveMin;
 
-            let currentTime = parseInt(new Date().getTime().toString().slice(0, -3));
+        let currentTime = parseInt(new Date().getTime().toString().slice(0, -3));
+        
+        try {
+            assert(maxAcceptableTime >= currentTime);
+        } catch(err) {
+            return err;
+        }
 
-            if (time + fiveMin >= currentTime) {
-                let validMsg = bitcoinMessage.verify(message, address, signature);
+        try {
+            assert(bitcoinMessage.verify(message, address, signature));
+        } catch {
+            return "Message is not valid.";
+        }
 
-                if (validMsg) {
-                    let block = new BlockClass.Block({address: address, star: star});
+        try {
+            let validationErrors = await self.validateChain();
+            assert(validationErrors.length === 0);
+        } catch {
+            return "Blockchain invalid.";
+        }
 
-                    await self._addBlock(block);
 
-                    resolve(block)
-                } else {
-                    reject("Message is not valid.");
-                }
-            } else {
-                reject("Not sent within 5min.");
-            }
-        });
+
+        try {
+            let block = await self._addBlock(
+                new BlockClass.Block({address: address, star: star})
+            );
+
+            return block;
+        } catch {
+            return "Can't add block;";
+        }
     }
 
     /**
@@ -200,31 +220,25 @@ class Blockchain {
      * 1. You should validate each block using `validateBlock`
      * 2. Each Block should check the with the previousBlockHash
      */
-    validateChain() {
+    async validateChain() {
         let self = this;
+
         let errorLog = [];
-        let previousBlockHash = null;
+        let previousBlockHash = self.chain[0].hash;
 
-        return new Promise(async (resolve, reject) => {
-            self.chain.filter(
-                b => b.height > 0
-            ).map(b => {
-                try {
-                    assert(b.validate());
-
-                    assert(b.previousBlockHash === previousBlockHash);
-                    previousBlockHash = b.hash;
-                } catch {
-                    errorLog.push(new Error(`Can't validate block #${b.height}`));
-                }
-            });
-
-            if (errorLog.length > 0) {
-                reject(errorLog);
-            } else {
-                resolve(errorLog);
+        self.chain.filter(
+            b => b.height > 0
+        ).map(b => {
+            try {
+                assert(b.validate());
+                assert(b.previousBlockHash === previousBlockHash);
+                previousBlockHash = b.hash;
+            } catch {
+                errorLog.push(new Error(`Can't validate block #${b.height}`));
             }
         });
+
+        return errorLog;
     }
 
 }
