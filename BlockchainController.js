@@ -65,17 +65,12 @@ class BlockchainController {
                 const star = req.body.star;
                 try {
                     let block = await this.blockchain.submitStar(address, message, signature, star);
-                    console.log('block');
-                    console.log(block);
                     if(block){
-                        console.log('if block = true');
                         return res.status(200).json(block);
                     } else {
-                        console.log('if block = false');
                         return res.status(500).send("An error happened!");
                     }
                 } catch (error) {
-                    console.log('catch');
                     return res.status(500).send(error);
                 }
             } else {
