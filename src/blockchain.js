@@ -68,11 +68,9 @@ class Blockchain {
         
         block.previousBlockHash = self.chain[self.height] ? self.chain[self.height].hash : null;
         
-        block.time = new Date().getTime().toString().slice(0,-3);
+        block.time = new Date().getTime().toString().slice(0, -3);
 
-        block.height = self.height + 1;
-
-        block.hash = SHA256(JSON.stringify(block)).toString();
+        block.height = self.chain.length;
         
         try {
             block.hash = SHA256(JSON.stringify(block)).toString();
@@ -81,7 +79,7 @@ class Blockchain {
             
             return block;
         } catch {
-            return "Can't create block.";
+            throw Error("Can't create block.");
         }
     }
 
@@ -95,7 +93,7 @@ class Blockchain {
      */
     requestMessageOwnershipVerification(address) {
         return new Promise((resolve) => {
-            resolve(`${address}:${new Date().getTime().toString().slice(0,-3)}:starRegistry`)
+            resolve(`${address}:${new Date().getTime().toString().slice(0, -3)}:starRegistry`)
         });
     }
 
@@ -119,32 +117,29 @@ class Blockchain {
     async submitStar(address, message, signature, star) {
         let self = this;
         
-        let time = parseInt(message.split(":")[1]);
-        let fiveMin = 5 * 60 * 10000;
-        let maxAcceptableTime = time + fiveMin;
-
+        let messageTime = parseInt(message.split(":")[1]);
         let currentTime = parseInt(new Date().getTime().toString().slice(0, -3));
         
+        let diffTime = Math.floor((currentTime - messageTime) / 60);
+
         try {
-            assert(maxAcceptableTime >= currentTime);
-        } catch(err) {
-            return err;
+            assert(diffTime <= 5);
+        } catch {
+            throw Error("Time elapsed bigger than 5min.");
         }
 
         try {
             assert(bitcoinMessage.verify(message, address, signature));
         } catch {
-            return "Message is not valid.";
+            throw Error("Message is not valid.");
         }
 
         try {
             let validationErrors = await self.validateChain();
             assert(validationErrors.length === 0);
         } catch {
-            return "Blockchain invalid.";
+            throw Error("Blockchain invalid.");
         }
-
-
 
         try {
             let block = await self._addBlock(
@@ -153,7 +148,7 @@ class Blockchain {
 
             return block;
         } catch {
-            return "Can't add block;";
+            throw Error("Can't add block.");
         }
     }
 
@@ -164,15 +159,24 @@ class Blockchain {
      * @param {*} hash 
      */
     getBlockByHash(hash) {
-        let self = this;
-        return new Promise((resolve, reject) => {
-            let block = self.chain.filter(pb => SHA256(JSON.stringify(b)).toString() === hash)[0];
-            if(block){
-                resolve(block);
-            } else {
-                resolve(null);
-            }
-        });
+        let self = this;  
+        
+        let block = self.chain.filter(b => {
+            let bHash = b.hash;
+            
+            b.hash = null;
+            let bAuxHash = SHA256(JSON.stringify(b)).toString();
+
+            b.hash = bHash;
+
+            return bAuxHash === hash;
+        })[0];
+
+        if(block){
+            return block;
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -210,7 +214,7 @@ class Blockchain {
                 b => b.star
             );
 
-            resolve(stars);
+            resolve(stars, address);
         });
     }
 

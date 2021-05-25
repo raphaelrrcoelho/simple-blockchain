@@ -38,9 +38,13 @@ class Block {
     async validate() {
         let self = this;
 
-        let auxHash = self.hash;                                
-
+        const auxHash = self.hash;   
+            
+        self.hash = null;
         const newHash = SHA256(JSON.stringify(self)).toString();
+
+        self.hash = auxHash;
+        
         // Returning the Block is valid
         return auxHash === newHash;
     }
